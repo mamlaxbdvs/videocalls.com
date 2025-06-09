@@ -1,0 +1,184 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Agora Video Call</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    #video-container {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .video-box {
+      width: 300px;
+      height: 200px;
+      background: black;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 to-purple-100 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white p-6 rounded-xl shadow-lg w-full max-w-3xl">
+    <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Agora Video Call</h1>
+    
+    <div class="mb-4">
+      <label for="channel" class="block text-gray-700 text-sm font-semibold mb-2">Channel Name:</label>
+      <input type="text" id="channel" value="video-channel"
+             class="shadow-sm border rounded-lg w-full py-2 px-3 text-gray-700 focus:ring-2 focus:ring-blue-500">
+    </div>
+    
+    <div class="flex flex-col sm:flex-row justify-center gap-4 mb-4">
+      <button id="join" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Join Call</button>
+      <button id="leave" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg" disabled>Leave Call</button>
+    </div>
+
+    <div id="video-container" class="justify-center items-center mb-4">
+      <div id="local-player" class="video-box" style="border: 2px solid blue;"></div>
+      <!-- Remote videos will be appended here -->
+    </div>
+
+    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <p class="text-gray-700 text-sm font-semibold mb-2">Status:</p>
+      <p id="status" class="text-sm text-gray-600">Disconnected</p>
+      <p class="text-gray-700 text-sm font-semibold mt-4 mb-2">Messages:</p>
+      <div id="messages" class="text-sm text-gray-600 h-24 overflow-y-auto bg-white p-2 rounded-md border border-gray-300"></div>
+    </div>
+  </div>
+
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+  <script>
+    const APP_ID = 'ee57f425743842bcbdb789e1b90775f7';
+    let agoraClient;
+    let localTracks = {
+      videoTrack: null,
+      audioTrack: null
+    };
+    let remoteUsers = {};
+    let uid = null;
+
+    const joinBtn = document.getElementById('join');
+    const leaveBtn = document.getElementById('leave');
+    const channelInput = document.getElementById('channel');
+    const statusDisplay = document.getElementById('status');
+    const messagesDisplay = document.getElementById('messages');
+    const localPlayerContainer = document.getElementById('local-player');
+    const videoContainer = document.getElementById('video-container');
+
+    function appendMessage(msg, type = 'info') {
+      const p = document.createElement('p');
+      p.textContent = msg;
+      if (type === 'error') p.classList.add('text-red-600', 'font-medium');
+      else if (type === 'success') p.classList.add('text-green-600', 'font-medium');
+      else p.classList.add('text-gray-700');
+      messagesDisplay.appendChild(p);
+      messagesDisplay.scrollTop = messagesDisplay.scrollHeight;
+    }
+
+    function initializeClient() {
+      agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+      agoraClient.on("user-published", async (user, mediaType) => {
+        await agoraClient.subscribe(user, mediaType);
+        appendMessage(`User ${user.uid} published.`);
+
+        if (mediaType === "video") {
+          const remotePlayer = document.createElement("div");
+          remotePlayer.id = `player-${user.uid}`;
+          remotePlayer.className = "video-box";
+          videoContainer.appendChild(remotePlayer);
+          user.videoTrack.play(`player-${user.uid}`);
+        }
+
+        if (mediaType === "audio") {
+          user.audioTrack.play();
+        }
+
+        remoteUsers[user.uid] = user;
+      });
+
+      agoraClient.on("user-unpublished", user => {
+        appendMessage(`User ${user.uid} unpublished.`);
+        const remoteDiv = document.getElementById(`player-${user.uid}`);
+        if (remoteDiv) remoteDiv.remove();
+        delete remoteUsers[user.uid];
+      });
+
+      agoraClient.on("user-left", user => {
+        appendMessage(`User ${user.uid} left.`);
+        const remoteDiv = document.getElementById(`player-${user.uid}`);
+        if (remoteDiv) remoteDiv.remove();
+        delete remoteUsers[user.uid];
+      });
+    }
+
+    async function fetchAgoraToken(channelName, uid) {
+      const tempToken = "007eJxTYAjZLe8zRcUqzzaNUflkYLyPj+TfaWY7jrB8MXmx1e/P7g4FhtRUU/M0EyNTcxNjCxOjpOSklCRzC8tUwyRLA3Nz0zTzm+FuGQ2BjAztPGYsjAwQCOKzMCQmJacwMAAAsIUdMQ==";
+      appendMessage("Using test token. Replace with a token server in production.", 'error');
+      return tempToken;
+    }
+
+    joinBtn.onclick = async () => {
+      const channelName = channelInput.value;
+      if (!APP_ID || !channelName) {
+        appendMessage("Please provide App ID and channel name", "error");
+        return;
+      }
+
+      joinBtn.disabled = true;
+      statusDisplay.textContent = "Connecting...";
+      initializeClient();
+
+      try {
+        const token = await fetchAgoraToken(channelName, null);
+        uid = await agoraClient.join(APP_ID, channelName, token, null);
+        appendMessage(`Joined channel ${channelName} as UID ${uid}`, "success");
+        statusDisplay.textContent = `Connected as UID: ${uid}`;
+
+        localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+        localTracks.videoTrack = await AgoraRTC.createCameraVideoTrack();
+        localTracks.videoTrack.play("local-player");
+
+        await agoraClient.publish(Object.values(localTracks));
+        appendMessage("Local video and audio published", "success");
+
+        leaveBtn.disabled = false;
+      } catch (err) {
+        appendMessage(`Error joining channel: ${err.message}`, "error");
+        joinBtn.disabled = false;
+        statusDisplay.textContent = "Disconnected";
+      }
+    };
+
+    leaveBtn.onclick = async () => {
+      leaveBtn.disabled = true;
+      statusDisplay.textContent = "Disconnecting...";
+      try {
+        for (const track in localTracks) {
+          if (localTracks[track]) {
+            localTracks[track].stop();
+            localTracks[track].close();
+          }
+        }
+        await agoraClient.leave();
+        localPlayerContainer.innerHTML = "";
+        Object.keys(remoteUsers).forEach(uid => {
+          const player = document.getElementById(`player-${uid}`);
+          if (player) player.remove();
+        });
+        remoteUsers = {};
+        statusDisplay.textContent = "Disconnected";
+        appendMessage("Left the call", "success");
+        joinBtn.disabled = false;
+      } catch (err) {
+        appendMessage(`Error leaving: ${err.message}`, "error");
+      }
+    };
+  </script>
+</body>
+</html>
